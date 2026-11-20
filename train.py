@@ -1,31 +1,46 @@
-import os
-import pickle
 
+from fastapi import FastAPI
+import joblib
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
-from sklearn.model_selection import train_test_split
 
-data = pd.read_csv("dataset/students.csv")
-data.columns = data.columns.str.strip()
-data = data.dropna(subset=["result"])
+app = FastAPI()
 
-X = data.drop(columns=["result"]).select_dtypes(include="number")
-X = X.fillna(X.median())
-y = data["result"].astype(str).str.strip()
+# Load trained model dictionary
+data = joblib.load("models/v2.pkl")
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.8, random_state=42)
-model = RandomForestClassifier(n_estimators=100, random_state=42).fit(X_train, y_train)
+# Extract actual trained ML model
+model = data["model"]
 
-y_pred = model.predict(X_test)
-acc = accuracy_score(y_test, y_pred)
-print(f"Accuracy: {acc * 100:.2f}%")
-print(classification_report(y_test, y_pred))
+# Get training feature names
+features = data["features"]
 
-os.makedirs("models", exist_ok=True)
-version = len(os.listdir("models")) + 1
-path = f"models/v{version}.pkl"
-with open(path, "wb") as f:
-    pickle.dump({"model": model, "features": list(X.columns), "target": "result",
-                 "dataset": "students_large.csv", "accuracy": acc}, f)
-print("Saved:", path)
+
+@app.get("/")
+def home():
+    return {
+        "message": "Welcome to the Student Performance Prediction API!"
+    }
+
+
+@app.post("/predict")
+def predict(
+    study_hours: float,
+    attendance: float,
+    previous_marks: float
+):
+    input_values = {
+        "study_hours": study_hours,
+        "attendance": attendance,
+        "previous_marks": previous_marks
+    }
+
+    # Arrange input according to model training features
+    input_data = pd.DataFrame([input_values])
+
+    input_data = input_data.reindex(columns=features)
+
+    prediction = model.predict(input_data)
+
+    return {
+        "prediction_result": float(prediction[0])
+    }
